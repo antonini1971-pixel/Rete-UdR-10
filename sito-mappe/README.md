@@ -24,6 +24,16 @@ python3 sito-mappe/build_data.py [percorso/GTFS.zip]
 
 Rigenera `sito-mappe/data/rete.js` (solo libreria standard Python). Senza argomento usa lo zip nella radice del repo.
 
+## File unico `index.html`
+
+```bash
+python3 sito-mappe/build_index.py
+```
+
+Crea `index.html` nella radice del repo con CSS, codice e dati incorporati: si apre con un doppio clic o si
+carica su qualsiasi hosting senza altri file (serve solo la connessione per Leaflet e le mappe di sfondo).
+Va rigenerato dopo ogni modifica a `sito-mappe/` o ai dati.
+
 ## Vedere il sito
 
 - In locale: `cd sito-mappe && python3 -m http.server` e apri <http://localhost:8000>

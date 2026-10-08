@@ -27,7 +27,9 @@ jobs:
         with:
           python-version: "3.12"
       - name: Rigenera i dati dal GTFS
-        run: python3 sito-mappe/build_data.py
+        run: |
+          python3 sito-mappe/build_data.py
+          python3 sito-mappe/build_index.py
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
