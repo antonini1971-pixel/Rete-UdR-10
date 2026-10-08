@@ -70,22 +70,28 @@
   L.control.layers(bases, null, { position: "bottomright" }).addTo(map);
   L.control.scale({ imperial: false, position: "bottomleft" }).addTo(map);
 
-  map.createPane("lines").style.zIndex = 400;
-  map.createPane("sel").style.zIndex = 410;
-  map.createPane("stopsPane").style.zIndex = 420;
-  map.createPane("arrows").style.zIndex = 415;
-  map.createPane("selStops").style.zIndex = 430;
-  const rLines = L.canvas({ pane: "lines", tolerance: 6 });
-  const rSel = L.canvas({ pane: "sel", tolerance: 6 });
-  const rStops = L.canvas({ pane: "stopsPane", tolerance: 4 });
-  const rSelStops = L.canvas({ pane: "selStops", tolerance: 4 });
+  // Ogni renderer canvas copre tutta la mappa e intercetta il mouse: per questo tutti gli
+  // elementi cliccabili (percorsi e fermate) stanno in UN SOLO canvas ("net"), mentre i livelli
+  // grafici sovrapposti (evidenziazione, frecce, fermate della linea) sono trasparenti al mouse.
+  const pane = (name, z, passThrough) => {
+    const el = map.createPane(name);
+    el.style.zIndex = z;
+    if (passThrough) el.style.pointerEvents = "none";
+  };
+  pane("net", 400, false);
+  pane("sel", 410, true);
+  pane("arrows", 415, true);
+  pane("selStops", 430, true);
+  const rNet = L.canvas({ pane: "net", tolerance: 5 });
+  const rSel = L.canvas({ pane: "sel" });
   const rArrows = L.canvas({ pane: "arrows" });
+  const rSelStops = L.canvas({ pane: "selStops" });
 
   // rete: una polilinea per percorso
   const shapeLayers = D.shapes.map((sh, si) => {
     const ri = shapeRoute[si];
     const r = D.routes[ri];
-    const pl = L.polyline(sh.pts, { renderer: rLines, color: r.c, weight: 3, opacity: 0.85, lineCap: "round", lineJoin: "round" });
+    const pl = L.polyline(sh.pts, { renderer: rNet, color: r.c, weight: 3, opacity: 0.85, lineCap: "round", lineJoin: "round" });
     pl.bindTooltip(() => `<b>${esc(r.s)}</b> · ${esc(r.n)}`, { sticky: true });
     pl.on("click", (e) => { L.DomEvent.stop(e); selectRoute(ri); });
     pl.on("mouseover", () => { if (state.route === null && !state.freq) pl.setStyle({ weight: 6 }); });
@@ -98,12 +104,14 @@
 
   // fermate
   const stopLayers = D.stops.map((s, i) => {
-    const m = L.circleMarker([s[2], s[3]], { renderer: rStops, radius: 3, weight: 1.5, color: "#33415c", fillColor: "#fff", fillOpacity: 1 });
-    m.bindTooltip(() => esc(s[0]), { direction: "top", offset: [0, -4] });
+    const m = L.circleMarker([s[2], s[3]], { renderer: rNet, radius: 3, weight: 1.5, color: "#33415c", fillColor: "#fff", fillOpacity: 1 });
+    m.bindTooltip(() => esc(s[0]) + (stopTimeHint.has(i) ? ` · <b>${hhmm(stopTimeHint.get(i))}</b>` : ""), { direction: "top", offset: [0, -4] });
     m.on("click", (e) => { L.DomEvent.stop(e); selectStop(i, true); });
     return m;
   });
-  const stopsLayer = L.layerGroup(stopLayers).addTo(map);
+  L.layerGroup(stopLayers).addTo(map); // aggiunte dopo i percorsi: nel canvas stanno sopra
+  let routeStops = new Set(); // fermate della linea selezionata: restano cliccabili anche se nascoste
+  let stopTimeHint = new Map(); // orari della corsa evidenziata, mostrati nel tooltip della fermata
 
   const selLayer = L.layerGroup().addTo(map);
 
@@ -129,7 +137,7 @@
         const r = L.point(c.x - ux * size - px * size * 0.85, c.y - uy * size - py * size * 0.85);
         const back = L.point(c.x - ux * size * 0.35, c.y - uy * size * 0.35);
         L.polygon([tip, l, back, r].map((q) => map.layerPointToLatLng(q)), {
-          renderer: rArrows, color: "#fff", weight: 1.2, fillColor: color, fillOpacity: 1, interactive: false,
+          renderer: rArrows, color, weight: 2, fillColor: "#fff", fillOpacity: 1, interactive: false,
         }).addTo(arrowLayer);
       }
       acc += len;
@@ -147,7 +155,7 @@
         const r = D.routes[shapeRoute[si]];
         if (state.comune !== null && r.g !== state.comune) return;
         if (!vb.intersects(L.latLngBounds(sh.pts))) return;
-        arrowsAlong(sh.pts, r.c, 5, 150, view);
+        arrowsAlong(sh.pts, r.c, 7, 150, view);
       });
     }
   }
@@ -160,11 +168,21 @@
   }
   function refreshStopsVisibility() {
     const show = $("#showStops").checked && map.getZoom() >= 10;
-    if (show && !map.hasLayer(stopsLayer)) stopsLayer.addTo(map);
-    if (!show && map.hasLayer(stopsLayer)) map.removeLayer(stopsLayer);
     const r = stopRadius();
     const dim = state.route !== null;
-    stopLayers.forEach((m) => m.setStyle({ radius: r, opacity: dim ? 0.35 : 1, fillOpacity: dim ? 0.35 : 1 }));
+    stopLayers.forEach((m, i) => {
+      if (routeStops.has(i)) {
+        // disegnata dal livello della linea: qui solo area cliccabile invisibile
+        m.options.interactive = true;
+        m.setStyle({ radius: Math.max(r, 5), opacity: 0, fillOpacity: 0 });
+      } else if (!show) {
+        m.options.interactive = false;
+        m.setStyle({ opacity: 0, fillOpacity: 0 });
+      } else {
+        m.options.interactive = true;
+        m.setStyle({ radius: r, opacity: dim ? 0.35 : 1, fillOpacity: dim ? 0.35 : 1 });
+      }
+    });
   }
   map.on("zoomend", refreshStopsVisibility);
   $("#showStops").addEventListener("change", refreshStopsVisibility);
@@ -301,7 +319,7 @@
     navigator.geolocation.getCurrentPosition((p) => {
       const ll = L.latLng(p.coords.latitude, p.coords.longitude);
       if (youMarker) map.removeLayer(youMarker);
-      youMarker = L.circleMarker(ll, { radius: 8, color: "#fff", weight: 3, fillColor: "#0b6bcb", fillOpacity: 1, pane: "selStops" }).addTo(map).bindTooltip("Sei qui");
+      youMarker = L.circleMarker(ll, { radius: 8, color: "#fff", weight: 3, fillColor: "#0b6bcb", fillOpacity: 1, renderer: rSelStops, interactive: false }).addTo(map);
       const near = D.stops.map((s, i) => [i, ll.distanceTo([s[2], s[3]])]).sort((a, b) => a[1] - b[1]).slice(0, 15);
       renderStopList(near.map(([i, d]) => [i, d < 1000 ? Math.round(d) + " m" : (d / 1000).toFixed(1) + " km"]));
       map.setView(ll, Math.max(map.getZoom(), 15));
@@ -315,6 +333,7 @@
     state.route = null; state.stop = null; state.trip = null;
     selLayer.clearLayers();
     arrowShapes = [];
+    routeStops = new Set(); stopTimeHint = new Map();
     styleNetwork();
     refreshStopsVisibility();
     writeHash();
@@ -408,7 +427,7 @@
     const shapesOther = new Set(all.map((ti) => D.trips[ti][T_SHAPE]).filter((s) => !shapesDir.has(s)));
     shapesOther.forEach((si) => L.polyline(D.shapes[si].pts, { renderer: rSel, color: r.c, weight: 3, opacity: 0.35, dashArray: "6 6", interactive: false }).addTo(selLayer));
     const bounds = L.latLngBounds([]);
-    arrowShapes = [...shapesDir].map((si) => [si, r.c, 7]);
+    arrowShapes = [...shapesDir].map((si) => [si, r.c, 10]);
     shapesDir.forEach((si) => {
       const isTrip = state.trip !== null && D.trips[state.trip][T_SHAPE] === si;
       L.polyline(D.shapes[si].pts, { renderer: rSel, color: "#fff", weight: 9, opacity: 0.9, interactive: false }).addTo(selLayer);
@@ -453,12 +472,11 @@
   }
 
   function drawRouteStops(stops, r, times) {
+    routeStops = new Set(stops);
+    stopTimeHint = times || new Map();
     stops.forEach((s) => {
       const st = D.stops[s];
-      const m = L.circleMarker([st[2], st[3]], { renderer: rSelStops, radius: 5, weight: 2.5, color: r.c, fillColor: "#fff", fillOpacity: 1 });
-      m.bindTooltip(esc(st[0]) + (times && times.has(s) ? ` · <b>${hhmm(times.get(s))}</b>` : ""), { direction: "top", offset: [0, -5] });
-      m.on("click", (e) => { L.DomEvent.stop(e); selectStop(s, false); });
-      m.addTo(selLayer);
+      L.circleMarker([st[2], st[3]], { renderer: rSelStops, radius: 5, weight: 2.5, color: r.c, fillColor: "#fff", fillOpacity: 1, interactive: false }).addTo(selLayer);
     });
   }
 
@@ -479,8 +497,9 @@
       const sh = new Set(tripsByRoute[ri].filter((ti) => D.trips[ti][T_STOPS].includes(i)).map((ti) => D.trips[ti][T_SHAPE]));
       sh.forEach((si) => L.polyline(D.shapes[si].pts, { renderer: rSel, color: D.routes[ri].c, weight: 4.5, opacity: 0.9, interactive: false }).addTo(selLayer));
     });
-    arrowShapes = routes.flatMap((ri) => [...new Set(tripsByRoute[ri].filter((ti) => D.trips[ti][T_STOPS].includes(i)).map((ti) => D.trips[ti][T_SHAPE]))].map((si) => [si, D.routes[ri].c, 6]));
-    L.circleMarker([s[2], s[3]], { renderer: rSelStops, radius: 10, weight: 4, color: "#0b6bcb", fillColor: "#fff", fillOpacity: 1 }).bindTooltip(esc(s[0])).addTo(selLayer);
+    arrowShapes = routes.flatMap((ri) => [...new Set(tripsByRoute[ri].filter((ti) => D.trips[ti][T_STOPS].includes(i)).map((ti) => D.trips[ti][T_SHAPE]))].map((si) => [si, D.routes[ri].c, 8]));
+    routeStops = new Set(); stopTimeHint = new Map();
+    L.circleMarker([s[2], s[3]], { renderer: rSelStops, radius: 10, weight: 4, color: "#0b6bcb", fillColor: "#fff", fillOpacity: 1, interactive: false }).addTo(selLayer);
 
     const deps = tripsByStop[i]
       .filter(([ti, pos]) => D.trips[ti][T_SERV] === state.day && pos < D.trips[ti][T_STOPS].length - 1)
