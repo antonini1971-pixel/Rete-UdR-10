@@ -73,11 +73,13 @@
   map.createPane("lines").style.zIndex = 400;
   map.createPane("sel").style.zIndex = 410;
   map.createPane("stopsPane").style.zIndex = 420;
+  map.createPane("arrows").style.zIndex = 415;
   map.createPane("selStops").style.zIndex = 430;
   const rLines = L.canvas({ pane: "lines", tolerance: 6 });
   const rSel = L.canvas({ pane: "sel", tolerance: 6 });
   const rStops = L.canvas({ pane: "stopsPane", tolerance: 4 });
   const rSelStops = L.canvas({ pane: "selStops", tolerance: 4 });
+  const rArrows = L.canvas({ pane: "arrows" });
 
   // rete: una polilinea per percorso
   const shapeLayers = D.shapes.map((sh, si) => {
@@ -104,6 +106,52 @@
   const stopsLayer = L.layerGroup(stopLayers).addTo(map);
 
   const selLayer = L.layerGroup().addTo(map);
+
+  // ---------- frecce di direzione lungo i percorsi (ordine dei punti dello shape = verso di marcia)
+  const arrowLayer = L.layerGroup().addTo(map);
+  let arrowShapes = []; // [[shapeIdx, colore, dimensione]] per la selezione corrente
+  const ARROW_ZOOM_NET = 14; // da questo zoom le frecce compaiono anche sulla rete intera
+  function arrowsAlong(pts, color, size, spacing, view) {
+    const P = pts.map((p) => map.latLngToLayerPoint(p));
+    let next = spacing / 2, acc = 0;
+    for (let i = 1; i < P.length; i++) {
+      const a = P[i - 1], b = P[i];
+      const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);
+      if (!len) continue;
+      while (acc + len >= next) {
+        const t = (next - acc) / len;
+        const c = L.point(a.x + dx * t, a.y + dy * t);
+        next += spacing;
+        if (view && !view.contains(c)) continue;
+        const ux = dx / len, uy = dy / len, px = -uy, py = ux;
+        const tip = L.point(c.x + ux * size, c.y + uy * size);
+        const l = L.point(c.x - ux * size + px * size * 0.85, c.y - uy * size + py * size * 0.85);
+        const r = L.point(c.x - ux * size - px * size * 0.85, c.y - uy * size - py * size * 0.85);
+        const back = L.point(c.x - ux * size * 0.35, c.y - uy * size * 0.35);
+        L.polygon([tip, l, back, r].map((q) => map.layerPointToLatLng(q)), {
+          renderer: rArrows, color: "#fff", weight: 1.2, fillColor: color, fillOpacity: 1, interactive: false,
+        }).addTo(arrowLayer);
+      }
+      acc += len;
+    }
+  }
+  function drawArrows() {
+    arrowLayer.clearLayers();
+    const pb = map.getPixelBounds(), o = map.getPixelOrigin();
+    const view = L.bounds(pb.min.subtract(o).subtract([40, 40]), pb.max.subtract(o).add([40, 40]));
+    const vb = map.getBounds().pad(0.1);
+    if (arrowShapes.length) {
+      arrowShapes.forEach(([si, color, size]) => arrowsAlong(D.shapes[si].pts, color, size, 110, view));
+    } else if (map.getZoom() >= ARROW_ZOOM_NET && !state.freq) {
+      D.shapes.forEach((sh, si) => {
+        const r = D.routes[shapeRoute[si]];
+        if (state.comune !== null && r.g !== state.comune) return;
+        if (!vb.intersects(L.latLngBounds(sh.pts))) return;
+        arrowsAlong(sh.pts, r.c, 5, 150, view);
+      });
+    }
+  }
+  map.on("zoomend moveend", drawArrows);
   let youMarker = null;
 
   function stopRadius() {
@@ -140,6 +188,7 @@
     const max = counts ? Math.max(1, ...counts) : 1;
     if (counts) $("#freqMax").textContent = max;
     $("#freqLegend").classList.toggle("hidden", !state.freq);
+    drawArrows();
     shapeLayers.forEach((pl, si) => {
       const ri = shapeRoute[si];
       const inComune = state.comune === null || D.routes[ri].g === state.comune;
@@ -265,6 +314,7 @@
     detail.classList.add("hidden");
     state.route = null; state.stop = null; state.trip = null;
     selLayer.clearLayers();
+    arrowShapes = [];
     styleNetwork();
     refreshStopsVisibility();
     writeHash();
@@ -358,6 +408,7 @@
     const shapesOther = new Set(all.map((ti) => D.trips[ti][T_SHAPE]).filter((s) => !shapesDir.has(s)));
     shapesOther.forEach((si) => L.polyline(D.shapes[si].pts, { renderer: rSel, color: r.c, weight: 3, opacity: 0.35, dashArray: "6 6", interactive: false }).addTo(selLayer));
     const bounds = L.latLngBounds([]);
+    arrowShapes = [...shapesDir].map((si) => [si, r.c, 7]);
     shapesDir.forEach((si) => {
       const isTrip = state.trip !== null && D.trips[state.trip][T_SHAPE] === si;
       L.polyline(D.shapes[si].pts, { renderer: rSel, color: "#fff", weight: 9, opacity: 0.9, interactive: false }).addTo(selLayer);
@@ -428,6 +479,7 @@
       const sh = new Set(tripsByRoute[ri].filter((ti) => D.trips[ti][T_STOPS].includes(i)).map((ti) => D.trips[ti][T_SHAPE]));
       sh.forEach((si) => L.polyline(D.shapes[si].pts, { renderer: rSel, color: D.routes[ri].c, weight: 4.5, opacity: 0.9, interactive: false }).addTo(selLayer));
     });
+    arrowShapes = routes.flatMap((ri) => [...new Set(tripsByRoute[ri].filter((ti) => D.trips[ti][T_STOPS].includes(i)).map((ti) => D.trips[ti][T_SHAPE]))].map((si) => [si, D.routes[ri].c, 6]));
     L.circleMarker([s[2], s[3]], { renderer: rSelStops, radius: 10, weight: 4, color: "#0b6bcb", fillColor: "#fff", fillOpacity: 1 }).bindTooltip(esc(s[0])).addTo(selLayer);
 
     const deps = tripsByStop[i]

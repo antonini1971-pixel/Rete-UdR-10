@@ -5,7 +5,7 @@ Sito statico (HTML + [Leaflet](https://leafletjs.com/)) che mostra su mappa la r
 
 ## Funzioni
 
-- **Mappa della rete**: tutti i percorsi colorati per linea, con fermate; mappe di base ESRI (grigio chiaro, grigio scuro, stradale, topografica, satellite).
+- **Mappa della rete**: tutti i percorsi colorati per linea, con fermate e frecce del verso di marcia (sulla linea/fermata selezionata e, da zoom 14, su tutta la rete); mappe di base ESRI (grigio chiaro, grigio scuro, stradale, topografica, satellite).
 - **Tipo di giorno**: Feriale / Sabato / Festivo (calendari `udr10_10`, `udr10_20`, `udr10_30`).
 - **Linee**: ricerca, filtro per comune, numero di corse del giorno; scheda linea con km/giorno,
   prima e ultima partenza, direzioni, **quadro orario** completo (clic su un orario per evidenziare la corsa) e
