@@ -4,26 +4,55 @@
 Uso:
     python3 sito-mappe/build_data.py [percorso_gtfs.zip]
 
+Senza argomento usa lo zip GTFS nella radice del repo; se ce n'è più di uno,
+quello aggiunto/modificato per ultimo (secondo git, altrimenti per data file).
+
 Genera sito-mappe/data/rete.js (window.RETE = {...}).
 """
 import csv
+import datetime
+import glob
 import io
 import json
 import math
 import os
+import subprocess
 import sys
 import zipfile
 from collections import defaultdict
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_ZIP = os.path.join(HERE, "..", "GTFS_UdR10_5Ottobre_correzioni.zip")
+ROOT = os.path.normpath(os.path.join(HERE, ".."))
 
-# Etichette dei calendari (dal calendar_dates: 18/12 ven, 19/12 sab, 20/12 dom)
-SERVICE_LABELS = {
-    "udr10_10": "Feriale",
-    "udr10_20": "Sabato",
-    "udr10_30": "Festivo",
-}
+def find_gtfs():
+    zips = glob.glob(os.path.join(ROOT, "*.zip"))
+    if not zips:
+        raise SystemExit("Nessun file .zip GTFS trovato nella radice del repo.")
+
+    def committed(path):
+        try:
+            out = subprocess.run(["git", "log", "-1", "--format=%ct", "--", os.path.basename(path)],
+                                 cwd=ROOT, capture_output=True, text=True).stdout.strip()
+            return int(out) if out else float("inf")  # non ancora in git: è il più recente
+        except OSError:
+            return 0
+
+    return max(zips, key=lambda z: (committed(z), os.path.getmtime(z)))
+
+
+def service_label(weekdays):
+    """Feriale / Sabato / Festivo in base ai giorni della settimana in cui il calendario è attivo."""
+    if not weekdays:
+        return None
+    parts = []
+    if weekdays & {0, 1, 2, 3, 4}:
+        parts.append("Feriale")
+    if 5 in weekdays:
+        parts.append("Sabato")
+    if 6 in weekdays:
+        parts.append("Festivo")
+    return " + ".join(parts)
+
 
 COMUNI = {
     "AN": "Anzio", "AP": "Aprilia", "AR": "Ardea", "AZ": "Anzio-Nettuno",
@@ -113,7 +142,8 @@ def hsl_to_hex(h, s, l):
 
 
 def main():
-    zpath = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_ZIP
+    zpath = sys.argv[1] if len(sys.argv) > 1 else find_gtfs()
+    print(f"GTFS: {os.path.basename(zpath)}")
     zf = zipfile.ZipFile(zpath)
     agency = read(zf, "agency.txt")[0]
     routes = read(zf, "routes.txt")
@@ -121,7 +151,9 @@ def main():
     trips = read(zf, "trips.txt")
     stop_times = read(zf, "stop_times.txt")
     shapes_raw = read(zf, "shapes.txt")
-    cal_dates = read(zf, "calendar_dates.txt")
+    names = set(zf.namelist())
+    calendar = read(zf, "calendar.txt") if "calendar.txt" in names else []
+    cal_dates = read(zf, "calendar_dates.txt") if "calendar_dates.txt" in names else []
 
     # --- fermate
     stop_index = {}
@@ -177,8 +209,24 @@ def main():
         st_by_trip[r["trip_id"]].append((int(r["stop_sequence"]), stop_index[r["stop_id"]],
                                          to_min(r["departure_time"] or r["arrival_time"])))
     services = sorted({t["service_id"] for t in trips})
+    service_dates = {}
+    weekdays = defaultdict(set)
+    for c in calendar:
+        for k, g in enumerate(["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]):
+            if c.get(g) == "1":
+                weekdays[c["service_id"]].add(k)
+    for d in sorted(cal_dates, key=lambda d: d["date"]):
+        if d["exception_type"] == "1":
+            service_dates.setdefault(d["service_id"], d["date"])
+            weekdays[d["service_id"]].add(datetime.datetime.strptime(d["date"], "%Y%m%d").weekday())
+    labels = {s: service_label(weekdays[s]) or s for s in services}
+    # etichette uguali (es. due calendari feriali): si distinguono con il codice
+    dup = {l for l in labels.values() if list(labels.values()).count(l) > 1}
+    labels = {s: f"{l} ({s})" if l in dup else l for s, l in labels.items()}
+    # ordine: Feriale, Sabato, Festivo
+    order = {"Feriale": 0, "Sabato": 1, "Festivo": 2}
+    services.sort(key=lambda s: (order.get(labels[s].split(" ")[0], 9), s))
     service_index = {s: i for i, s in enumerate(services)}
-    service_dates = {d["service_id"]: d["date"] for d in cal_dates if d["exception_type"] == "1"}
 
     trips_out = []
     for t in trips:
@@ -203,7 +251,7 @@ def main():
     data = {
         "agency": {"name": agency["agency_name"], "url": agency["agency_url"]},
         "source": os.path.basename(zpath),
-        "services": [{"id": s, "label": SERVICE_LABELS.get(s, s), "date": service_dates.get(s, "")}
+        "services": [{"id": s, "label": labels[s], "date": service_dates.get(s, "")}
                      for s in services],
         "routes": routes_out,
         "stops": stops_out,
