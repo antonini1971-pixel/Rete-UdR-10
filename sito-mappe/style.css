@@ -195,7 +195,7 @@ table.tt td.hl, table.tt th.hl { background: var(--accent-weak); }
 /* departures */
 .dep { display: flex; align-items: center; gap: 10px; padding: 7px 4px; border-bottom: 1px solid var(--border); cursor: pointer; }
 .dep:hover { background: var(--surface-2); }
-.dep .time { font-weight: 700; font-variant-numeric: tabular-nums; width: 44px; }
+.dep .time { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 44px; }
 .dep .to { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .dep .in { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .dep.past { opacity: .45; }

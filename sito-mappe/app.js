@@ -8,9 +8,11 @@
 
   const $ = (s, el = document) => el.querySelector(s);
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const hhmm = (m) => String(Math.floor(m / 60) % 24).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
+  // orari in secondi dalla mezzanotte; i secondi si mostrano solo se diversi da zero (es. 06:54:30)
+  const p2 = (n) => String(n).padStart(2, "0");
+  const hhmm = (t) => p2(Math.floor(t / 3600) % 24) + ":" + p2(Math.floor(t / 60) % 60) + (t % 60 ? ":" + p2(t % 60) : "");
   const stopTime = (t, i) => t[T_T0] + t[T_DT][i];
-  const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
+  const nowSec = () => { const d = new Date(); return d.getHours() * 3600 + d.getMinutes() * 60; };
   const fmtKm = (v) => v.toLocaleString("it-IT", { maximumFractionDigits: 0 });
   const textOn = (hex) => {
     const n = parseInt(hex.slice(1), 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
@@ -347,7 +349,7 @@
     const rb = e.target.closest("[data-route]");
     if (rb) return selectRoute(+rb.dataset.route);
     const db = e.target.closest("[data-dir]");
-    if (db) { state.dir = +db.dataset.dir; state.trip = null; return renderRouteDetail(); }
+    if (db) { state.dir = +db.dataset.dir; state.trip = null; renderRouteDetail(); return writeHash(); }
     const sb = e.target.closest("[data-stop]");
     if (sb) return selectStop(+sb.dataset.stop, true);
     if (e.target.closest("#fromNow")) { state.fromNow = !state.fromNow; renderStopDetail(); }
@@ -505,7 +507,7 @@
       .filter(([ti, pos]) => D.trips[ti][T_SERV] === state.day && pos < D.trips[ti][T_STOPS].length - 1)
       .map(([ti, pos]) => [ti, stopTime(D.trips[ti], pos)])
       .sort((a, b) => a[1] - b[1]);
-    const now = nowMin();
+    const now = nowSec();
     const shown = state.fromNow ? deps.filter((d) => d[1] >= now) : deps;
 
     let html = `<div class="detail-head"><button class="back">‹ Indietro</button>
@@ -537,7 +539,7 @@
     const rows = [...byComune.entries()].sort((a, b) => b[1] - a[1]);
     const max = rows.length ? rows[0][1] : 1;
     const hours = new Array(24).fill(0);
-    day.forEach((t) => hours[Math.floor(t[T_T0] / 60) % 24]++);
+    day.forEach((t) => hours[Math.floor(t[T_T0] / 3600) % 24]++);
     const hmax = Math.max(1, ...hours);
     const svc = D.services[state.day];
 
@@ -583,7 +585,7 @@
     setDay(state.day);
     if (p.has("linea") && nameToRoute.has(p.get("linea"))) {
       selectRoute(nameToRoute.get(p.get("linea")));
-      if (p.has("dir")) { state.dir = +p.get("dir"); renderRouteDetail(true); }
+      if (p.has("dir")) { state.dir = +p.get("dir"); renderRouteDetail(true); writeHash(); }
     } else if (p.has("fermata") && codeToStop.has(p.get("fermata"))) {
       showTab("fermate");
       selectStop(codeToStop.get(p.get("fermata")), true);

@@ -83,9 +83,10 @@ def comune_of(short):
     return "Altro"
 
 
-def to_min(t):
-    h, m, s = (int(x) for x in t.split(":"))
-    return h * 60 + m
+def to_sec(t):
+    # i secondi contano: molti orari del GTFS sono al mezzo minuto (es. 06:54:30)
+    h, m, sec = (int(x) for x in t.split(":"))
+    return h * 3600 + m * 60 + sec
 
 
 # Douglas-Peucker su coordinate proiettate localmente (metri)
@@ -207,7 +208,7 @@ def main():
     st_by_trip = defaultdict(list)
     for r in stop_times:
         st_by_trip[r["trip_id"]].append((int(r["stop_sequence"]), stop_index[r["stop_id"]],
-                                         to_min(r["departure_time"] or r["arrival_time"])))
+                                         to_sec(r["departure_time"] or r["arrival_time"])))
     services = sorted({t["service_id"] for t in trips})
     service_dates = {}
     weekdays = defaultdict(set)
@@ -233,7 +234,7 @@ def main():
         seq = sorted(st_by_trip[t["trip_id"]])
         if not seq:
             continue
-        # tempi codificati come delta dal primo per compattezza
+        # tempi in secondi dalla mezzanotte, codificati come delta dal primo per compattezza
         t0 = seq[0][2]
         trips_out.append([
             route_index[t["route_id"]],
