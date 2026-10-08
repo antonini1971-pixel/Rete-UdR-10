@@ -3,7 +3,7 @@ name: Pubblica sito mappe
 on:
   push:
     branches: [main]
-    paths: ["sito-mappe/**", "GTFS_*.zip", ".github/workflows/pages-mappe.yml"]
+    paths: ["sito-mappe/**", "*.zip", ".github/workflows/pages-mappe.yml"]
   workflow_dispatch:
 
 permissions:
@@ -23,6 +23,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # serve la storia git per scegliere lo zip GTFS più recente
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
