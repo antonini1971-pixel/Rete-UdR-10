@@ -1,56 +1,37 @@
-# Sito mappe interattive — Rete UdR 10
+# Sito della Rete UdR 10
 
-Sito statico (HTML + [Leaflet](https://leafletjs.com/)) che mostra su mappa la rete descritta nel GTFS
-`GTFS_UdR10_5Ottobre_correzioni.zip`.
+Sito con mappa interattiva e quadri orari della rete, generato dal GTFS. È un unico file HTML autonomo
+(la libreria delle mappe Leaflet è inclusa): si apre con un doppio clic o si pubblica così com'è.
 
 ## Funzioni
 
-- **Mappa della rete**: tutti i percorsi colorati per linea, con fermate e frecce del verso di marcia (sulla linea/fermata selezionata e, da zoom 14, su tutta la rete); mappe di base ESRI (grigio chiaro, grigio scuro, stradale, topografica, satellite).
-- **Tipo di giorno**: Feriale / Sabato / Festivo (calendari `udr10_10`, `udr10_20`, `udr10_30`).
-- **Linee**: ricerca, filtro per comune, numero di corse del giorno; scheda linea con km/giorno,
-  prima e ultima partenza, direzioni, **quadro orario** completo (clic su un orario per evidenziare la corsa) e
-  sequenza fermate.
-- **Fermate**: ricerca per nome o codice, “fermate vicino a me” (geolocalizzazione), linee servite e
-  tabellone delle partenze (anche “solo da ora”), link alle indicazioni.
-- **Mappa frequenze**: spessore e colore dei percorsi in base al numero di corse giornaliere.
-- **Rete**: indicatori (linee attive, corse, bus·km), partenze per fascia oraria, corse per comune.
-- **Link condivisibili**: l’URL conserva giorno, linea/direzione o fermata (es. `#g=feriale&linea=AN1`).
+- **Elenco linee per comune** con ricerca per linea o fermata e numero di corse nel giorno scelto.
+- **Giorno**: si sceglie una data; linee, corse e partenze seguono i calendari del GTFS.
+- **Mappa** (sfondi Esri: stradale, topografica, grigio chiaro, satellite): percorsi della linea con frecce del
+  senso di marcia, capolinea P/A, varianti di percorso evidenziabili, filtro per zone, schermo intero, stampa.
+- **Quadro orario** per calendario e direzione, con fermate principali o tutte; clic su una corsa per vederla
+  sulla mappa, clic su una fermata per le sue partenze del giorno.
+- **Vicino a me** e **Bus in viaggio** (posizioni stimate dagli orari programmati, non in tempo reale).
+- Orari sempre nel formato **hh:mm**: gli orari del GTFS con i secondi (es. 06:54:30) sono troncati al minuto.
 
-## Aggiornare i dati con un nuovo GTFS
+Il GTFS non indica le fermate principali (`timepoint` è sempre 1): sono considerate principali i capolinea,
+la prima fermata in ogni comune, i nodi serviti da almeno 4 altre linee e una fermata almeno ogni 5 minuti
+di viaggio (parametri in testa a `build_data.py`).
 
-**Da GitHub (senza installare nulla)**
+## File
 
-1. Nella pagina del repository: *Add file → Upload files*, trascina il nuovo zip GTFS, poi *Commit changes*
-   direttamente su `main`.
-2. Il workflow *Pubblica sito mappe* rigenera i dati e ripubblica il sito in un paio di minuti
-   (si segue nella scheda *Actions*).
+- `template.html`: grafica e funzioni del sito, con i segnaposto per i dati.
+- `build_data.py`: legge il GTFS e scrive il sito completo in `sito-mappe/index.html` (pubblicato online) e
+  `index.html` nella radice del repo.
 
-Il sito usa lo zip più recente presente nella radice del repo: i vecchi zip si possono lasciare o cancellare.
-Le etichette Feriale / Sabato / Festivo sono ricavate dai giorni in cui ogni calendario è attivo
-(`calendar.txt` e `calendar_dates.txt`), quindi funzionano con qualsiasi codice `service_id`.
+## Aggiornare con un nuovo GTFS
 
-**Dal computer**
+**Da GitHub**: *Add file → Upload files*, trascina il nuovo zip GTFS e fai *Commit changes* su `main`.
+Il workflow *Pubblica sito mappe* rigenera e ripubblica il sito in un paio di minuti (scheda *Actions*).
+Il sito usa lo zip più recente presente nella radice del repo.
 
-```bash
-python3 sito-mappe/build_data.py [percorso/GTFS.zip]   # rigenera sito-mappe/data/rete.js
-python3 sito-mappe/build_index.py                      # rigenera index.html (file unico)
-```
-
-Senza argomento `build_data.py` usa lo zip più recente nella radice del repo. Serve solo Python 3.
-
-## File unico `index.html`
+**Dal computer** (serve solo Python 3):
 
 ```bash
-python3 sito-mappe/build_index.py
+python3 sito-mappe/build_data.py [percorso/GTFS.zip]
 ```
-
-Crea `index.html` nella radice del repo con CSS, codice e dati incorporati: si apre con un doppio clic o si
-carica su qualsiasi hosting senza altri file (serve solo la connessione per Leaflet e le mappe di sfondo).
-Va rigenerato dopo ogni modifica a `sito-mappe/` o ai dati.
-
-## Vedere il sito
-
-- In locale: `cd sito-mappe && python3 -m http.server` e apri <http://localhost:8000>
-  (oppure apri direttamente `index.html` nel browser).
-- Online: il workflow `.github/workflows/pages-mappe.yml` pubblica la cartella su GitHub Pages ad ogni push su
-  `main` (in *Settings → Pages* impostare **Source: GitHub Actions**).
